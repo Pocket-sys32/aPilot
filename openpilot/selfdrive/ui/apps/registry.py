@@ -17,8 +17,16 @@ class AppSpec(HoneycombItem):
 
 
 def _music() -> Widget:
+  import os
   from openpilot.selfdrive.ui.apps.music.music_app import MusicPlayerView
-  return MusicPlayerView()
+  source = os.getenv("MUSIC_BACKEND", "bluetooth")
+  if source == "mock":  # demo tracks, nothing to set up
+    return MusicPlayerView()
+  if source == "spotify":  # Spotify Web API, see spotify/spotify_login.py
+    from openpilot.selfdrive.ui.apps.music.spotify.backend import SpotifyMusicBackend
+    return MusicPlayerView(SpotifyMusicBackend())
+  from openpilot.selfdrive.ui.apps.music.bluetooth.backend import BluetoothMusicBackend
+  return MusicPlayerView(BluetoothMusicBackend())
 
 
 def _placeholder(name: str) -> Callable[[], Widget]:

@@ -15,6 +15,8 @@ BTN_COLOR = rl.Color(45, 45, 45, 255)
 BTN_PRESSED = rl.Color(75, 75, 75, 255)
 TRACK_BG = rl.Color(255, 255, 255, 50)
 SUBTLE = rl.Color(170, 170, 170, 255)
+DISABLED = rl.Color(110, 110, 110, 255)
+ACTION_BTN = 3
 
 
 def _fmt_time(seconds: float) -> str:
@@ -31,6 +33,7 @@ class MusicPlayerView(Widget):
     self._state = self._backend.state()
     self._buttons: list[tuple[rl.Vector2, float]] = []  # (center, radius) for prev, play, next
     self._pressed_btn: int | None = None
+    self._action_rect: rl.Rectangle | None = None  # shown instead of the controls, e.g. "Pair phone"
 
   def _update_state(self):
     self._state = self._backend.state()
@@ -39,6 +42,8 @@ class MusicPlayerView(Widget):
     return min(self._rect.width / BASE_W, self._rect.height / BASE_H, MAX_SCALE)
 
   def _hit(self, pos: MousePos) -> int | None:
+    if self._action_rect is not None:
+      return ACTION_BTN if rl.check_collision_point_rec(pos, self._action_rect) else None
     for i, (c, r) in enumerate(self._buttons):
       if (pos.x - c.x) ** 2 + (pos.y - c.y) ** 2 <= (r * 1.15) ** 2:
         return i
@@ -52,6 +57,11 @@ class MusicPlayerView(Widget):
     btn, self._pressed_btn = self._pressed_btn, None
     if btn is None or btn != self._hit(mouse_pos):
       return
+    if btn == ACTION_BTN:
+      self._backend.run_action()
+      return
+    if not self._state.available:
+      return
     (self._backend.previous, self._backend.play_pause, self._backend.next)[btn]()
     self._state = self._backend.state()
 
@@ -63,8 +73,9 @@ class MusicPlayerView(Widget):
     pad = 24 * k
     st = self._state
 
-    title = st.title if st.available else "Nothing playing"
-    subtitle = st.artist if st.available else "Connect a music source"
+    # when there's nothing to control, keep the last track (if any) and explain why underneath
+    title = st.title or "Nothing playing"
+    subtitle = st.artist if st.available else (st.status or "Connect a music source")
     gui_label(rl.Rectangle(x0 + pad, y0 + 22 * k, w - pad * 2, 46 * k), title, int(40 * k), rl.WHITE, FontWeight.BOLD)
     gui_label(rl.Rectangle(x0 + pad, y0 + 66 * k, w - pad * 2, 32 * k), subtitle, int(28 * k), SUBTLE, FontWeight.MEDIUM)
 
@@ -79,10 +90,23 @@ class MusicPlayerView(Widget):
       time_rect = rl.Rectangle(bar.x, bar_y + 10 * k, bar.width, 24 * k)
       gui_label(time_rect, _fmt_time(st.progress_s), int(20 * k), SUBTLE, FontWeight.MEDIUM)
       gui_label(time_rect, _fmt_time(st.duration_s), int(20 * k), SUBTLE, FontWeight.MEDIUM, alignment=TextAlignment.RIGHT)
+      if st.device:
+        gui_label(time_rect, st.device, int(20 * k), SUBTLE, FontWeight.MEDIUM, alignment=TextAlignment.CENTER)
 
-    # controls
     cy = y0 + 186 * k
     cx = x0 + w / 2
+
+    # nothing to control but something the user can do about it: one button instead of the controls
+    if not st.available and st.action:
+      self._buttons = []
+      self._action_rect = rl.Rectangle(cx - 130 * k, cy - 34 * k, 260 * k, 68 * k)
+      pressed = self._pressed_btn == ACTION_BTN and self.is_pressed
+      rl.draw_rectangle_rounded(self._action_rect, 1.0, 16, BTN_PRESSED if pressed else BTN_COLOR)
+      gui_label(self._action_rect, st.action, int(28 * k), rl.WHITE, FontWeight.BOLD, alignment=TextAlignment.CENTER)
+      return
+    self._action_rect = None
+
+    # controls
     side_r, main_r = 34 * k, 42 * k
     gap = 110 * k
     self._buttons = [(rl.Vector2(cx - gap, cy), side_r), (rl.Vector2(cx, cy), main_r), (rl.Vector2(cx + gap, cy), side_r)]
@@ -91,8 +115,10 @@ class MusicPlayerView(Widget):
       fill = ACCENT if i == 1 else BTN_COLOR
       if pressed:
         fill = rl.Color(fill.r * 3 // 4, fill.g * 3 // 4, fill.b * 3 // 4, 255) if i == 1 else BTN_PRESSED
+      if not st.available:
+        fill = BTN_COLOR  # nothing to control: no green call to action
       rl.draw_circle_v(c, r, fill)
-      glyph_color = rl.BLACK if i == 1 else rl.WHITE
+      glyph_color = (rl.BLACK if i == 1 else rl.WHITE) if st.available else DISABLED
       if i == 0:
         glyphs.skip(c.x, c.y, r, glyph_color, forward=False)
       elif i == 1:

@@ -1,5 +1,5 @@
-"""Music controller backends. The UI only talks to MusicBackend, so a Spotify
-(Web API) implementation can replace MockMusicBackend without UI changes."""
+"""Music controller backends. The UI only talks to MusicBackend, so Bluetooth or
+Spotify implementation can replace MockMusicBackend without UI changes."""
 import time
 from dataclasses import dataclass
 from typing import Protocol
@@ -15,6 +15,9 @@ class PlaybackState:
   progress_s: float = 0.0
   duration_s: float = 0.0
   volume: float = 0.5  # 0..1
+  device: str = ""  # where the music is actually playing, e.g. "Pixel 8"
+  status: str = ""  # shown when there's nothing to control, e.g. "Spotify Premium required"
+  action: str = ""  # label of a button that fixes that status, e.g. "Pair phone" (runs run_action)
 
 
 class MusicBackend(Protocol):
@@ -23,6 +26,7 @@ class MusicBackend(Protocol):
   def next(self) -> None: ...
   def previous(self) -> None: ...
   def set_volume(self, volume: float) -> None: ...
+  def run_action(self) -> None: ...
 
 
 _DEMO_TRACKS = (
@@ -77,3 +81,6 @@ class MockMusicBackend:
 
   def set_volume(self, volume: float) -> None:
     self._volume = max(0.0, min(1.0, volume))
+
+  def run_action(self) -> None:
+    pass
