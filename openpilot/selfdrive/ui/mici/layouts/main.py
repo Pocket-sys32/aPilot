@@ -7,12 +7,16 @@ from openpilot.selfdrive.ui.mici.onroad.augmented_road_view import AugmentedRoad
 from openpilot.selfdrive.ui.ui_state import device, ui_state
 from openpilot.selfdrive.ui.mici.layouts.onboarding import OnboardingWindow
 from openpilot.selfdrive.ui.body.layouts.onroad import BodyLayout
+from openpilot.selfdrive.ui.apps.hosts import MiciAppPage
+from openpilot.selfdrive.ui.apps.registry import AppContentCache, AppSpec, build_apps
 from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.widgets.honeycomb import HoneycombItem, HoneycombLauncher
 from openpilot.system.ui.widgets.scroller import Scroller
 from openpilot.system.ui.lib.application import gui_app
 
 
 ONROAD_DELAY = 2.5  # seconds
+APPS_EDGE_ZONE = 48  # px at the launcher's left/right edges that swipe between pages instead of panning
 
 
 class MiciMainLayout(Scroller):
@@ -32,9 +36,13 @@ class MiciMainLayout(Scroller):
     self._settings_layout = SettingsLayout()
     self._car_onroad_layout = AugmentedRoadView(bookmark_callback=self._on_bookmark_clicked)
     self._body_onroad_layout = BodyLayout()
+    self._apps_layout = HoneycombLauncher(build_apps(open_settings=lambda: gui_app.push_widget(self._settings_layout)),
+                                          on_launch=self._on_app_launch, edge_zone=APPS_EDGE_ZONE)
+    self._app_contents = AppContentCache()
+    self._app_pages: dict[str, MiciAppPage] = {}
 
     # Initialize widget rects
-    for widget in (self._home_layout, self._alerts_layout, self._settings_layout,
+    for widget in (self._home_layout, self._alerts_layout, self._settings_layout, self._apps_layout,
                    self._car_onroad_layout, self._body_onroad_layout):
       # TODO: set parent rect and use it if never passed rect from render (like in Scroller)
       widget.set_rect(rl.Rectangle(0, 0, gui_app.width, gui_app.height))
@@ -42,13 +50,15 @@ class MiciMainLayout(Scroller):
     self._scroller.add_widgets([
       self._alerts_layout,
       self._home_layout,
+      self._apps_layout,
       self._car_onroad_layout,
       self._body_onroad_layout,
     ])
     self._scroller.set_reset_scroll_at_show(False)
 
-    # Disable scrolling when onroad is interacting with bookmark
-    self._scroller.set_scrolling_enabled(lambda: not self._car_onroad_layout.is_swiping_left())
+    # Disable scrolling when onroad is interacting with bookmark, or the app launcher is being panned
+    self._scroller.set_scrolling_enabled(lambda: not self._car_onroad_layout.is_swiping_left() and
+                                         not self._apps_layout.is_capturing_touch())
 
     # Set callbacks
     self._setup_callbacks()
@@ -143,6 +153,21 @@ class MiciMainLayout(Scroller):
       # Screen turns off on timeout offroad, so pop immediately without animation
       gui_app.pop_widgets_to(self, instant=True)
       self._scroll_to(self._home_layout)
+
+  def _on_app_launch(self, item: HoneycombItem):
+    assert isinstance(item, AppSpec)
+    if item.action is not None:
+      item.action()
+      return
+    if item.id not in self._app_pages:
+      content = self._app_contents.get(item)
+      if content is None:
+        return
+      page = MiciAppPage(content, item.color)
+      # the hive zooms back out of the icon as the app starts sliding away
+      page.set_dismiss_start_callback(self._apps_layout.begin_return)
+      self._app_pages[item.id] = page
+    gui_app.push_widget(self._app_pages[item.id])
 
   def _on_bookmark_clicked(self):
     for service in ('bookmarkButton', 'userBookmark'):

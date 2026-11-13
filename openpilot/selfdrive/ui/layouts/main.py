@@ -10,12 +10,17 @@ from openpilot.selfdrive.ui.onroad.augmented_road_view import AugmentedRoadView
 from openpilot.selfdrive.ui.ui_state import device, ui_state
 from openpilot.selfdrive.ui.layouts.onboarding import OnboardingWindow
 from openpilot.selfdrive.ui.body.layouts.onroad import BodyLayout
+from openpilot.selfdrive.ui.apps.hosts import TiciAppFrame
+from openpilot.selfdrive.ui.apps.registry import AppContentCache, AppSpec, build_apps
+from openpilot.system.ui.widgets.honeycomb import HoneycombItem, HoneycombLauncher
 
 
 class MainState(IntEnum):
   HOME = 0
   SETTINGS = 1
   ONROAD = 2
+  APPS = 3  # honeycomb launcher
+  APP = 4  # an app opened from the launcher
 
 
 class MainLayout(Widget):
@@ -31,10 +36,15 @@ class MainLayout(Widget):
     # Initialize layouts
     self._home_layout = HomeLayout()
     self._home_body_layout = BodyLayout()
+    self._app_contents = AppContentCache()
+    self._app_frame = TiciAppFrame(on_close=self._on_app_closed)
+    self._launcher = HoneycombLauncher(build_apps(open_settings=self._on_settings_clicked), on_launch=self._on_app_launch)
     self._layouts: dict[MainState, Widget] = {
       MainState.HOME: self._home_layout,
       MainState.SETTINGS: SettingsLayout(),
       MainState.ONROAD: AugmentedRoadView(),
+      MainState.APPS: self._launcher,
+      MainState.APP: self._app_frame,
     }
 
     self._sidebar_rect = rl.Rectangle(0, 0, 0, 0)
@@ -57,7 +67,8 @@ class MainLayout(Widget):
   def _setup_callbacks(self):
     self._sidebar.set_callbacks(on_settings=self._on_settings_clicked,
                                 on_flag=self._on_bookmark_clicked,
-                                open_settings=lambda: self.open_settings(PanelType.TOGGLES))
+                                open_settings=lambda: self.open_settings(PanelType.TOGGLES),
+                                on_home=self._on_home_clicked)
     self._layouts[MainState.HOME]._setup_widget.set_open_settings_callback(lambda: self.open_settings(PanelType.FIREHOSE))
     self._layouts[MainState.SETTINGS].set_callbacks(on_close=self._set_mode_for_state)
 
@@ -108,6 +119,28 @@ class MainLayout(Widget):
 
   def _on_settings_clicked(self):
     self.open_settings(PanelType.DEVICE)
+
+  def _on_home_clicked(self):
+    # offroad home button toggles the app launcher
+    if self._current_mode in (MainState.APPS, MainState.APP):
+      self._set_current_layout(MainState.HOME)
+    else:
+      self._set_current_layout(MainState.APPS)
+
+  def _on_app_launch(self, item: HoneycombItem):
+    assert isinstance(item, AppSpec)
+    if item.action is not None:
+      item.action()
+      return
+    content = self._app_contents.get(item)
+    if content is not None:
+      self._app_frame.set_content(content, item.color)
+      self._set_current_layout(MainState.APP)
+
+  def _on_app_closed(self):
+    # zoom back out of the app's icon
+    self._launcher.begin_return()
+    self._set_current_layout(MainState.APPS)
 
   def _on_bookmark_clicked(self):
     for service in ('bookmarkButton', 'userBookmark'):

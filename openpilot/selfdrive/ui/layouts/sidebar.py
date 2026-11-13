@@ -84,12 +84,14 @@ class Sidebar(Widget):
     self._on_settings_click: Callable | None = None
     self._on_flag_click: Callable | None = None
     self._open_settings_callback: Callable | None = None
+    self._on_home_click: Callable | None = None
 
   def set_callbacks(self, on_settings: Callable | None = None, on_flag: Callable | None = None,
-                    open_settings: Callable | None = None):
+                    open_settings: Callable | None = None, on_home: Callable | None = None):
     self._on_settings_click = on_settings
     self._on_flag_click = on_flag
     self._open_settings_callback = open_settings
+    self._on_home_click = on_home
 
   def _render(self, rect: rl.Rectangle):
     # Background
@@ -144,9 +146,12 @@ class Sidebar(Widget):
     if rl.check_collision_point_rec(rl.Vector2(mouse_pos.x, mouse_pos.y), SETTINGS_BTN):
       if self._on_settings_click:
         self._on_settings_click()
-    elif rl.check_collision_point_rec(rl.Vector2(mouse_pos.x, mouse_pos.y), HOME_BTN) and ui_state.started:
-      if self._on_flag_click:
-        self._on_flag_click()
+    elif rl.check_collision_point_rec(rl.Vector2(mouse_pos.x, mouse_pos.y), HOME_BTN):
+      if ui_state.started:
+        if self._on_flag_click:
+          self._on_flag_click()
+      elif self._on_home_click:
+        self._on_home_click()
     elif self._recording_audio and rl.check_collision_point_rec(rl.Vector2(mouse_pos.x, mouse_pos.y), self._mic_indicator_rect):
       if self._open_settings_callback:
         self._open_settings_callback()
@@ -164,7 +169,7 @@ class Sidebar(Widget):
     flag_pressed = mouse_down and rl.check_collision_point_rec(rl.Vector2(mouse_pos.x, mouse_pos.y), HOME_BTN)
     button_img = self._flag_img if ui_state.started else self._home_img
 
-    tint = Colors.BUTTON_PRESSED if (ui_state.started and flag_pressed) else Colors.BUTTON_NORMAL
+    tint = Colors.BUTTON_PRESSED if (flag_pressed and (ui_state.started or self._on_home_click)) else Colors.BUTTON_NORMAL
     rl.draw_texture_ex(button_img, rl.Vector2(HOME_BTN.x, HOME_BTN.y), 0.0, 1.0, tint)
 
     # Microphone button
